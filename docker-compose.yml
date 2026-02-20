@@ -1,0 +1,26 @@
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    environment:
+      # Override BACKEND_URL to use Docker's internal network
+      BACKEND_URL: http://backend:8000
+      # Persist chats to a named volume; survives container restarts
+      CHAINLIT_DB_URL: sqlite+aiosqlite:////app/data/chainlit.db
+    volumes:
+      - chainlit_data:/app/data
+    depends_on:
+      - backend
+
+volumes:
+  chainlit_data:
