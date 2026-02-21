@@ -9,10 +9,15 @@ import chainlit as cl
 from chainlit.data.sql_alchemy import SQLAlchemyDataLayer
 from dotenv import load_dotenv
 
+from db import ensure_tables
+
 load_dotenv()
 
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 _DB_URL = os.getenv("CHAINLIT_DB_URL", "sqlite+aiosqlite:///./chainlit.db")
+
+# Create SQLite tables before the async event loop starts
+ensure_tables(_DB_URL)
 
 
 @cl.data_layer
