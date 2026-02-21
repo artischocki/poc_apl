@@ -40,11 +40,15 @@ async def on_message(message: cl.Message):
     await msg.send()
 
     async with httpx.AsyncClient(timeout=120) as client:
-        async with client.stream(
+        # Use send(stream=True) instead of client.stream() to avoid anyio
+        # cancel-scope errors when Chainlit tears down the message handler task.
+        request = client.build_request(
             "POST",
             f"{BACKEND_URL}/chat/stream",
             json={"message": message.content, "session_id": session_id},
-        ) as response:
+        )
+        response = await client.send(request, stream=True)
+        try:
             response.raise_for_status()
             async for line in response.aiter_lines():
                 if not line.startswith("data: "):
@@ -56,5 +60,7 @@ async def on_message(message: cl.Message):
                 token = data.get("token", "")
                 if token:
                     await msg.stream_token(token)
+        finally:
+            await response.aclose()
 
     await msg.update()
