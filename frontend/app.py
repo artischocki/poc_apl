@@ -4,7 +4,7 @@ chat threads to a SQLite database via SQLAlchemyDataLayer."""
 import json
 import os
 
-import httpx
+import aiohttp
 import chainlit as cl
 from chainlit.data.sql_alchemy import SQLAlchemyDataLayer
 from dotenv import load_dotenv
@@ -39,18 +39,21 @@ async def on_message(message: cl.Message):
     msg = cl.Message(content="")
     await msg.send()
 
-    async with httpx.AsyncClient(timeout=120) as client:
-        # Use send(stream=True) instead of client.stream() to avoid anyio
-        # cancel-scope errors when Chainlit tears down the message handler task.
-        request = client.build_request(
-            "POST",
+    # aiohttp is used instead of httpx because httpx uses anyio internally,
+    # which causes cancel-scope task-affinity errors when Chainlit cleans up.
+    timeout = aiohttp.ClientTimeout(total=120)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        async with session.post(
             f"{BACKEND_URL}/chat/stream",
             json={"message": message.content, "session_id": session_id},
-        )
-        response = await client.send(request, stream=True)
-        try:
+        ) as response:
             response.raise_for_status()
-            async for line in response.aiter_lines():
+            # readline() gives clean SSE lines without chunk-boundary issues
+            while True:
+                line_bytes = await response.content.readline()
+                if not line_bytes:
+                    break
+                line = line_bytes.decode().strip()
                 if not line.startswith("data: "):
                     continue
                 raw = line[6:]
@@ -60,7 +63,5 @@ async def on_message(message: cl.Message):
                 token = data.get("token", "")
                 if token:
                     await msg.stream_token(token)
-        finally:
-            await response.aclose()
 
     await msg.update()
