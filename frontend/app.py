@@ -40,7 +40,6 @@ def auth_callback(username: str, password: str) -> Optional[cl.User]:
 @cl.on_chat_start
 async def on_chat_start():
     cl.user_session.set("session_id", cl.context.session.id)
-    await cl.Message(content="Hello! I'm your data assistant. How can I help?").send()
 
 
 @cl.on_message

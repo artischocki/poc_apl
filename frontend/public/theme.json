@@ -1,14 +1,14 @@
 {
   "variables": {
     "light": {
-      "--primary": "196 67% 45%",
+      "--primary": "137 100% 25%",
       "--primary-foreground": "0 0% 100%",
-      "--ring": "196 67% 45%"
+      "--ring": "137 100% 25%"
     },
     "dark": {
-      "--primary": "196 67% 45%",
+      "--primary": "137 100% 25%",
       "--primary-foreground": "0 0% 100%",
-      "--ring": "196 67% 45%"
+      "--ring": "137 100% 25%"
     }
   }
 }
