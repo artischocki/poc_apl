@@ -10,6 +10,8 @@ dependencies = [
     "langchain-anthropic",
     "python-dotenv",
     "httpx",
+    "asammdf",
+    "numpy",
 ]
 
 [tool.uv]
