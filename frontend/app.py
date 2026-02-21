@@ -3,6 +3,7 @@ chat threads to a SQLite database via SQLAlchemyDataLayer."""
 
 import json
 import os
+from typing import Optional
 
 import aiohttp
 import chainlit as cl
@@ -24,6 +25,16 @@ ensure_tables(_DB_URL)
 def get_data_layer():
     """Return the data layer used for chat persistence."""
     return SQLAlchemyDataLayer(conninfo=_DB_URL)
+
+
+@cl.password_auth_callback
+def auth_callback(username: str, password: str) -> Optional[cl.User]:
+    """Validate credentials from CHAINLIT_USERNAME / CHAINLIT_PASSWORD env vars."""
+    expected_user = os.getenv("CHAINLIT_USERNAME", "admin")
+    expected_pass = os.getenv("CHAINLIT_PASSWORD", "admin")
+    if username == expected_user and password == expected_pass:
+        return cl.User(identifier=username)
+    return None
 
 
 @cl.on_chat_start
