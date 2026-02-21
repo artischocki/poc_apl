@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS steps (
     streaming     INTEGER DEFAULT 0,
     waitForAnswer INTEGER DEFAULT 0,
     isError       INTEGER DEFAULT 0,
+    defaultOpen   INTEGER DEFAULT 0,
     showInput     TEXT    DEFAULT '0',
     tags          TEXT,
     language      TEXT
@@ -87,12 +88,23 @@ CREATE TABLE IF NOT EXISTS elements (
 """
 
 
+_MIGRATIONS = [
+    # Added in Chainlit ≥ latest: defaultOpen column on steps
+    "ALTER TABLE steps ADD COLUMN defaultOpen INTEGER DEFAULT 0",
+]
+
+
 def ensure_tables(db_url: str) -> None:
-    """Create all Chainlit tables in the SQLite database if they don't exist."""
+    """Create all Chainlit tables and apply additive migrations if needed."""
     path = _db_path_from_url(db_url)
     conn = sqlite3.connect(path)
     try:
         conn.executescript(_CREATE_STATEMENTS)
+        for sql in _MIGRATIONS:
+            try:
+                conn.execute(sql)
+            except sqlite3.OperationalError:
+                pass  # column already exists
         conn.commit()
     finally:
         conn.close()
