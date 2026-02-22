@@ -1,5 +1,8 @@
+"""FastAPI backend — exposes the LangChain agent over HTTP with SSE streaming."""
+
 import json
 import os
+from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
 
@@ -11,8 +14,17 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from agent import build_agent
+from timescaledb import ensure_schema
 
-app = FastAPI(title="Data Agent API")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Run schema initialisation before accepting requests."""
+    ensure_schema()
+    yield
+
+
+app = FastAPI(title="Data Agent API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

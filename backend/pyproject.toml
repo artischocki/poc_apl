@@ -12,6 +12,7 @@ dependencies = [
     "httpx",
     "asammdf",
     "numpy",
+    "psycopg2-binary",
 ]
 
 [tool.uv]

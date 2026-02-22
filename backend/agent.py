@@ -9,7 +9,7 @@ import os
 from langchain.agents import create_agent
 from langchain.chat_models import init_chat_model
 
-from tools import explore_mdf, read_mdf_channels
+from tools import explore_mdf, read_mdf_channels, ingest_mdf_to_db, query_sensor_data
 
 
 def build_agent():
@@ -21,12 +21,14 @@ def build_agent():
 
     agent = create_agent(
         model=model,
-        tools=[explore_mdf, read_mdf_channels],
+        tools=[explore_mdf, read_mdf_channels, ingest_mdf_to_db, query_sensor_data],
         system_prompt=(
-            "You are a data exploration assistant. "
-            "You have access to tools for reading MDF measurement files. "
-            "When the user provides a file path, use explore_mdf first to understand "
-            "the file structure, then read_mdf_channels to retrieve specific signals. "
+            "You are a sensor data exploration assistant. "
+            "You can read MDF measurement files directly or ingest them into TimescaleDB "
+            "for persistent SQL-based exploration. "
+            "Workflow: use explore_mdf to inspect a file, ingest_mdf_to_db to store it, "
+            "then query_sensor_data to analyse it with SQL. "
+            "TimescaleDB time-series functions (time_bucket, first, last) are available. "
             "Always report units and highlight notable statistics."
         ),
     )
