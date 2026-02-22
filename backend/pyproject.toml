@@ -13,6 +13,7 @@ dependencies = [
     "asammdf",
     "numpy",
     "psycopg2-binary",
+    "matplotlib",
 ]
 
 [tool.uv]

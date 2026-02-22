@@ -3,6 +3,7 @@
 import json
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from dotenv import load_dotenv
 
@@ -11,6 +12,7 @@ load_dotenv()
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from agent import build_agent
@@ -25,6 +27,10 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Data Agent API", lifespan=lifespan)
+
+_plots_dir = Path(__file__).parent / "plots"
+_plots_dir.mkdir(exist_ok=True)
+app.mount("/plots", StaticFiles(directory=str(_plots_dir)), name="plots")
 
 app.add_middleware(
     CORSMiddleware,

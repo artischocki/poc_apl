@@ -5,5 +5,6 @@ not registered for this POC — the agent works exclusively through TimescaleDB.
 """
 
 from .timescale import ingest_mdf_to_db, query_sensor_data
+from .plots import plot_timeseries, plot_barchart
 
-__all__ = ["ingest_mdf_to_db", "query_sensor_data"]
+__all__ = ["ingest_mdf_to_db", "query_sensor_data", "plot_timeseries", "plot_barchart"]
