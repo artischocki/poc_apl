@@ -8,6 +8,7 @@ dependencies = [
     "python-dotenv",
     "aiosqlite",
     "sqlalchemy",
+    "plotly",
 ]
 
 [tool.uv]

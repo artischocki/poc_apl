@@ -7,6 +7,7 @@ from typing import Optional
 
 import aiohttp
 import chainlit as cl
+import plotly.io as pio
 from chainlit.data.sql_alchemy import SQLAlchemyDataLayer
 from dotenv import load_dotenv
 
@@ -51,6 +52,8 @@ async def on_message(message: cl.Message):
 
     # Tracks open cl.Step objects by run_id so tool_end can close them.
     active_steps: dict[str, cl.Step] = {}
+    # Plotly figures to attach to the message once streaming completes.
+    plot_elements: list[cl.Plotly] = []
 
     # aiohttp is used instead of httpx because httpx uses anyio internally,
     # which causes cancel-scope task-affinity errors when Chainlit cleans up.
@@ -91,8 +94,15 @@ async def on_message(message: cl.Message):
                         # Truncate very long outputs to keep the UI readable
                         step.output = output[:3000] if len(output) > 3000 else output
                         await step.update()
+                elif event_type == "plotly":
+                    fig = pio.from_json(data["figure_json"])
+                    plot_elements.append(
+                        cl.Plotly(figure=fig, display="inline")
+                    )
                 elif "token" in data:
                     # Backward-compatible: handle events without the type field
                     await msg.stream_token(data["token"])
 
+    if plot_elements:
+        msg.elements = plot_elements
     await msg.update()

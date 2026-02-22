@@ -100,6 +100,15 @@ async def chat_stream(request: ChatRequest):
                     if hasattr(tool_output, "content")
                     else str(tool_output)
                 )
+                if output_str.startswith("PLOT:"):
+                    uid = output_str[5:]
+                    plot_path = _plots_dir / f"{uid}.json"
+                    try:
+                        figure_json = plot_path.read_text()
+                        yield f"data: {json.dumps({'type': 'plotly', 'run_id': run_id, 'figure_json': figure_json})}\n\n"
+                        output_str = "Chart generated."
+                    except FileNotFoundError:
+                        output_str = "Plot file not found."
                 yield f"data: {json.dumps({'type': 'tool_end', 'run_id': run_id, 'output': output_str})}\n\n"
         yield "data: [DONE]\n\n"
 

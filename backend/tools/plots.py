@@ -1,64 +1,56 @@
 """Plotting tools for agent-driven sensor data visualisation.
 
-Generates Matplotlib figures from SQL query results, saves them as PNGs to the
-backend's /plots static directory, and returns a markdown image reference that
-Chainlit renders inline.
+Generates interactive Plotly figures from SQL query results, saves them as
+JSON to the backend's /plots directory, and returns a PLOT:{uuid} token.
+The streaming layer in main.py intercepts this token, reads the JSON, and
+emits a typed SSE event so the frontend can render a cl.Plotly element.
 
 Two tools:
 - plot_timeseries: time on x-axis, one or more numeric series as lines.
-- plot_barchart:   categorical x-axis, numeric y-axis (aggregates, comparisons).
+- plot_barchart:   categorical x-axis, numeric y-axis (aggregates/comparisons).
 """
 
-import os
 import time
 import uuid
 from pathlib import Path
 
-import matplotlib
-import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
+import plotly.graph_objects as go
 from langchain.tools import tool
 
 from timescaledb import get_connection
 
-matplotlib.use("Agg")  # non-interactive backend — safe for server use
-
 _PLOTS_DIR = Path(__file__).parent.parent / "plots"
 _PLOTS_DIR.mkdir(exist_ok=True)
 
-_BACKEND_PUBLIC_URL = os.getenv("BACKEND_PUBLIC_URL", "http://localhost:8000")
-
-# Delete PNGs older than this many seconds to avoid unbounded disk growth
 _MAX_PLOT_AGE_S = 3600
 
 
 def _purge_old_plots() -> None:
-    """Remove plot files older than _MAX_PLOT_AGE_S."""
+    """Remove plot JSON files older than _MAX_PLOT_AGE_S."""
     now = time.time()
-    for f in _PLOTS_DIR.glob("*.png"):
+    for f in _PLOTS_DIR.glob("*.json"):
         if now - f.stat().st_mtime > _MAX_PLOT_AGE_S:
             f.unlink(missing_ok=True)
 
 
-def _save_fig(fig) -> str:
-    """Save a matplotlib figure to the plots dir and return its public URL."""
+def _save_fig(fig: go.Figure) -> str:
+    """Persist figure as JSON and return its UUID."""
     _purge_old_plots()
-    filename = f"{uuid.uuid4().hex}.png"
-    fig.savefig(_PLOTS_DIR / filename, dpi=150, bbox_inches="tight")
-    plt.close(fig)
-    return f"{_BACKEND_PUBLIC_URL}/plots/{filename}"
+    uid = uuid.uuid4().hex
+    (_PLOTS_DIR / f"{uid}.json").write_text(fig.to_json())
+    return uid
 
 
 @tool
 def plot_timeseries(sql: str, title: str, y_label: str = "value") -> str:
-    """Execute a SQL query and render the result as a time-series line chart.
+    """Execute a SQL query and render the result as an interactive time-series line chart.
 
     The query must return columns in one of these shapes:
-      - (timestamp, value)                → single line
-      - (timestamp, value, series_name)   → one line per distinct series_name
+      - (timestamp, value)              → single line
+      - (timestamp, value, series_name) → one line per distinct series_name
 
     The timestamp column must be the first column.
-    Use time_bucket() or similar to downsample large ranges before plotting.
+    Use time_bucket() to downsample large ranges before plotting.
 
     Args:
         sql:     SELECT query returning (time, value) or (time, value, series).
@@ -66,7 +58,7 @@ def plot_timeseries(sql: str, title: str, y_label: str = "value") -> str:
         y_label: Label for the y-axis (include unit, e.g. "Speed (km/h)").
 
     Returns:
-        Markdown image string that Chainlit renders inline.
+        A plot reference token (PLOT:uuid). The chart is rendered automatically in the UI.
     """
     try:
         conn = get_connection()
@@ -81,36 +73,36 @@ def plot_timeseries(sql: str, title: str, y_label: str = "value") -> str:
         if not rows:
             return "Query returned no data."
 
-        plt.style.use("dark_background")
-        fig, ax = plt.subplots(figsize=(12, 4))
-        fig.patch.set_facecolor("#1a1a1a")
-        ax.set_facecolor("#1a1a1a")
+        fig = go.Figure()
 
         if len(cols) >= 3:
             # Multi-series: group by the third column
-            from itertools import groupby
             series: dict = {}
             for row in rows:
-                key = row[2]
+                key = str(row[2])
                 series.setdefault(key, ([], []))
                 series[key][0].append(row[0])
                 series[key][1].append(row[1])
             for name, (xs, ys) in series.items():
-                ax.plot(xs, ys, label=str(name), linewidth=1.2)
-            ax.legend(fontsize=8)
+                fig.add_trace(go.Scatter(x=xs, y=ys, mode="lines", name=name))
         else:
             xs = [r[0] for r in rows]
             ys = [r[1] for r in rows]
-            ax.plot(xs, ys, linewidth=1.2, color="#2596be")
+            fig.add_trace(go.Scatter(
+                x=xs, y=ys, mode="lines", name=y_label,
+                line=dict(color="#2596be"),
+            ))
 
-        ax.set_title(title, fontsize=13, pad=10)
-        ax.set_ylabel(y_label, fontsize=10)
-        ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M:%S"))
-        fig.autofmt_xdate()
-        ax.grid(True, alpha=0.2)
+        fig.update_layout(
+            title=title,
+            xaxis_title="Time",
+            yaxis_title=y_label,
+            template="plotly_dark",
+            hovermode="x unified",
+            margin=dict(l=60, r=20, t=50, b=40),
+        )
 
-        url = _save_fig(fig)
-        return f"![{title}]({url})"
+        return f"PLOT:{_save_fig(fig)}"
 
     except Exception as e:
         return f"Plot error: {e}"
@@ -118,7 +110,7 @@ def plot_timeseries(sql: str, title: str, y_label: str = "value") -> str:
 
 @tool
 def plot_barchart(sql: str, title: str, y_label: str = "value") -> str:
-    """Execute a SQL query and render the result as a bar chart.
+    """Execute a SQL query and render the result as an interactive bar chart.
 
     The query must return exactly two columns: (label, value).
     Useful for comparing aggregates across channels, runs, or time buckets.
@@ -129,7 +121,7 @@ def plot_barchart(sql: str, title: str, y_label: str = "value") -> str:
         y_label: Label for the y-axis (include unit).
 
     Returns:
-        Markdown image string that Chainlit renders inline.
+        A plot reference token (PLOT:uuid). The chart is rendered automatically in the UI.
     """
     try:
         conn = get_connection()
@@ -146,20 +138,21 @@ def plot_barchart(sql: str, title: str, y_label: str = "value") -> str:
         labels = [str(r[0]) for r in rows]
         values = [float(r[1]) if r[1] is not None else 0.0 for r in rows]
 
-        plt.style.use("dark_background")
-        fig, ax = plt.subplots(figsize=(max(6, len(labels) * 0.8), 4))
-        fig.patch.set_facecolor("#1a1a1a")
-        ax.set_facecolor("#1a1a1a")
+        fig = go.Figure(go.Bar(
+            x=labels,
+            y=values,
+            marker_color="#2596be",
+            text=[f"{v:.2f}" for v in values],
+            textposition="outside",
+        ))
+        fig.update_layout(
+            title=title,
+            yaxis_title=y_label,
+            template="plotly_dark",
+            margin=dict(l=60, r=20, t=50, b=80),
+        )
 
-        bars = ax.bar(labels, values, color="#2596be", width=0.6)
-        ax.bar_label(bars, fmt="%.2f", padding=3, fontsize=8)
-        ax.set_title(title, fontsize=13, pad=10)
-        ax.set_ylabel(y_label, fontsize=10)
-        plt.xticks(rotation=30, ha="right", fontsize=9)
-        ax.grid(True, axis="y", alpha=0.2)
-
-        url = _save_fig(fig)
-        return f"![{title}]({url})"
+        return f"PLOT:{_save_fig(fig)}"
 
     except Exception as e:
         return f"Plot error: {e}"
