@@ -202,6 +202,10 @@ def seed(conn) -> None:
 def main() -> None:
     url = os.environ["TIMESCALEDB_URL"]
     print(f"Connecting to {url} …")
+
+    from timescaledb import ensure_schema
+    ensure_schema()
+
     conn = psycopg2.connect(url)
     try:
         seed(conn)
