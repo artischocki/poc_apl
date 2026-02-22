@@ -95,7 +95,8 @@ async def on_message(message: cl.Message):
                         step.output = output[:3000] if len(output) > 3000 else output
                         await step.update()
                 elif event_type == "plotly":
-                    async with session.get(data["url"]) as plot_resp:
+                    plot_url = f"{BACKEND_URL}{data['path']}"
+                    async with session.get(plot_url) as plot_resp:
                         figure_json = await plot_resp.text()
                     fig = pio.from_json(figure_json)
                     plot_elements.append(cl.Plotly(figure=fig, display="inline"))
