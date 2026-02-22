@@ -49,6 +49,9 @@ async def on_message(message: cl.Message):
     msg = cl.Message(content="")
     await msg.send()
 
+    # Tracks open cl.Step objects by run_id so tool_end can close them.
+    active_steps: dict[str, cl.Step] = {}
+
     # aiohttp is used instead of httpx because httpx uses anyio internally,
     # which causes cancel-scope task-affinity errors when Chainlit cleans up.
     timeout = aiohttp.ClientTimeout(total=120)
@@ -70,8 +73,26 @@ async def on_message(message: cl.Message):
                 if raw == "[DONE]":
                     break
                 data = json.loads(raw)
-                token = data.get("token", "")
-                if token:
-                    await msg.stream_token(token)
+                event_type = data.get("type")
+
+                if event_type == "token":
+                    await msg.stream_token(data.get("token", ""))
+                elif event_type == "tool_start":
+                    run_id = data["run_id"]
+                    step = cl.Step(name=data["name"], type="tool", parent_id=msg.id)
+                    step.input = data.get("input", "")
+                    await step.send()
+                    active_steps[run_id] = step
+                elif event_type == "tool_end":
+                    run_id = data.get("run_id", "")
+                    step = active_steps.pop(run_id, None)
+                    if step:
+                        output = data.get("output", "")
+                        # Truncate very long outputs to keep the UI readable
+                        step.output = output[:3000] if len(output) > 3000 else output
+                        await step.update()
+                elif "token" in data:
+                    # Backward-compatible: handle events without the type field
+                    await msg.stream_token(data["token"])
 
     await msg.update()

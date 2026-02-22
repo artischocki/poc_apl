@@ -78,9 +78,29 @@ async def chat_stream(request: ChatRequest):
                     for block in content:
                         if isinstance(block, dict) and block.get("type") == "text":
                             token = block["text"]
-                            yield f"data: {json.dumps({'token': token})}\n\n"
+                            yield f"data: {json.dumps({'type': 'token', 'token': token})}\n\n"
                 else:
-                    yield f"data: {json.dumps({'token': content})}\n\n"
+                    yield f"data: {json.dumps({'type': 'token', 'token': content})}\n\n"
+            elif event["event"] == "on_tool_start":
+                tool_name = event.get("name", "unknown")
+                run_id = event.get("run_id", "")
+                tool_input = event["data"].get("input", "")
+                try:
+                    input_payload = (
+                        json.dumps(tool_input) if not isinstance(tool_input, str) else tool_input
+                    )
+                except (TypeError, ValueError):
+                    input_payload = str(tool_input)
+                yield f"data: {json.dumps({'type': 'tool_start', 'run_id': run_id, 'name': tool_name, 'input': input_payload})}\n\n"
+            elif event["event"] == "on_tool_end":
+                run_id = event.get("run_id", "")
+                tool_output = event["data"].get("output", "")
+                output_str = (
+                    str(tool_output.content)
+                    if hasattr(tool_output, "content")
+                    else str(tool_output)
+                )
+                yield f"data: {json.dumps({'type': 'tool_end', 'run_id': run_id, 'output': output_str})}\n\n"
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(generate(), media_type="text/event-stream")
