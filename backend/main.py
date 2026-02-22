@@ -2,6 +2,7 @@
 
 import json
 import os
+from collections import defaultdict
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -41,6 +42,10 @@ app.add_middleware(
 
 agent = build_agent()
 
+# Per-session in-memory message history: list of {"role": ..., "content": ...} dicts.
+# Keyed by session_id, which comes from the Chainlit session.
+_histories: dict[str, list[dict]] = defaultdict(list)
+
 
 class ChatRequest(BaseModel):
     message: str
@@ -54,18 +59,24 @@ async def health():
 
 @app.post("/chat")
 async def chat(request: ChatRequest):
-    result = await agent.ainvoke(
-        {"messages": [{"role": "user", "content": request.message}]}
-    )
+    history = _histories[request.session_id]
+    history.append({"role": "user", "content": request.message})
+    result = await agent.ainvoke({"messages": list(history)})
     last_message = result["messages"][-1]
+    history.append({"role": "assistant", "content": last_message.content})
     return {"response": last_message.content}
 
 
 @app.post("/chat/stream")
 async def chat_stream(request: ChatRequest):
+    history = _histories[request.session_id]
+    history.append({"role": "user", "content": request.message})
+
     async def generate():
+        assistant_tokens: list[str] = []
+
         async for event in agent.astream_events(
-            {"messages": [{"role": "user", "content": request.message}]},
+            {"messages": list(history)},
             version="v2",
         ):
             if event["event"] == "on_chat_model_stream":
@@ -78,8 +89,10 @@ async def chat_stream(request: ChatRequest):
                     for block in content:
                         if isinstance(block, dict) and block.get("type") == "text":
                             token = block["text"]
+                            assistant_tokens.append(token)
                             yield f"data: {json.dumps({'type': 'token', 'token': token})}\n\n"
                 else:
+                    assistant_tokens.append(content)
                     yield f"data: {json.dumps({'type': 'token', 'token': content})}\n\n"
             elif event["event"] == "on_tool_start":
                 tool_name = event.get("name", "unknown")
@@ -110,6 +123,7 @@ async def chat_stream(request: ChatRequest):
                     except FileNotFoundError:
                         output_str = "Plot file not found."
                 yield f"data: {json.dumps({'type': 'tool_end', 'run_id': run_id, 'output': output_str})}\n\n"
+        history.append({"role": "assistant", "content": "".join(assistant_tokens)})
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(generate(), media_type="text/event-stream")
