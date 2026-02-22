@@ -9,7 +9,7 @@ import os
 from langchain.agents import create_agent
 from langchain.chat_models import init_chat_model
 
-from tools import explore_mdf, read_mdf_channels, ingest_mdf_to_db, query_sensor_data
+from tools import ingest_mdf_to_db, query_sensor_data
 
 
 def build_agent():
@@ -21,15 +21,14 @@ def build_agent():
 
     agent = create_agent(
         model=model,
-        tools=[explore_mdf, read_mdf_channels, ingest_mdf_to_db, query_sensor_data],
+        tools=[ingest_mdf_to_db, query_sensor_data],
         system_prompt=(
-            "You are a sensor data exploration assistant. "
-            "You can read MDF measurement files directly or ingest them into TimescaleDB "
-            "for persistent SQL-based exploration. "
-            "Workflow: use explore_mdf to inspect a file, ingest_mdf_to_db to store it, "
-            "then query_sensor_data to analyse it with SQL. "
-            "TimescaleDB time-series functions (time_bucket, first, last) are available. "
-            "Always report units and highlight notable statistics."
+            "You are a sensor data exploration assistant backed by a TimescaleDB database. "
+            "The measurements table has columns: "
+            "time (TIMESTAMPTZ), file_name (TEXT), channel (TEXT), value (DOUBLE PRECISION), unit (TEXT). "
+            "Use query_sensor_data to answer questions with SQL. "
+            "TimescaleDB functions like time_bucket(), first(), last() are available. "
+            "Always include units in your answers and highlight notable patterns or anomalies."
         ),
     )
 
