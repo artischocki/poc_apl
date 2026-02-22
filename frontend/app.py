@@ -95,10 +95,10 @@ async def on_message(message: cl.Message):
                         step.output = output[:3000] if len(output) > 3000 else output
                         await step.update()
                 elif event_type == "plotly":
-                    fig = pio.from_json(data["figure_json"])
-                    plot_elements.append(
-                        cl.Plotly(figure=fig, display="inline")
-                    )
+                    async with session.get(data["url"]) as plot_resp:
+                        figure_json = await plot_resp.text()
+                    fig = pio.from_json(figure_json)
+                    plot_elements.append(cl.Plotly(figure=fig, display="inline"))
                 elif "token" in data:
                     # Backward-compatible: handle events without the type field
                     await msg.stream_token(data["token"])

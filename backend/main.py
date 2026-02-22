@@ -42,6 +42,8 @@ app.add_middleware(
 
 agent = build_agent()
 
+_BACKEND_PUBLIC_URL = os.getenv("BACKEND_PUBLIC_URL", "http://localhost:8000")
+
 # Per-session in-memory message history: list of {"role": ..., "content": ...} dicts.
 # Keyed by session_id, which comes from the Chainlit session.
 _histories: dict[str, list[dict]] = defaultdict(list)
@@ -115,13 +117,9 @@ async def chat_stream(request: ChatRequest):
                 )
                 if output_str.startswith("PLOT:"):
                     uid = output_str[5:]
-                    plot_path = _plots_dir / f"{uid}.json"
-                    try:
-                        figure_json = plot_path.read_text()
-                        yield f"data: {json.dumps({'type': 'plotly', 'run_id': run_id, 'figure_json': figure_json})}\n\n"
-                        output_str = "Chart generated."
-                    except FileNotFoundError:
-                        output_str = "Plot file not found."
+                    plot_url = f"{_BACKEND_PUBLIC_URL}/plots/{uid}.json"
+                    yield f"data: {json.dumps({'type': 'plotly', 'run_id': run_id, 'url': plot_url})}\n\n"
+                    output_str = "Chart generated."
                 yield f"data: {json.dumps({'type': 'tool_end', 'run_id': run_id, 'output': output_str})}\n\n"
         history.append({"role": "assistant", "content": "".join(assistant_tokens)})
         yield "data: [DONE]\n\n"
