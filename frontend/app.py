@@ -1,6 +1,7 @@
 """Chainlit frontend — streams responses from the FastAPI backend and persists
 chat threads to a SQLite database via SQLAlchemyDataLayer."""
 
+import asyncio
 import json
 import os
 from typing import Optional
@@ -43,8 +44,18 @@ async def on_chat_start():
     cl.user_session.set("session_id", cl.context.session.id)
 
 
+@cl.on_stop
+async def on_stop():
+    """Cancel the running on_message task when the user clicks the stop button."""
+    task = cl.user_session.get("message_task")
+    if task and not task.done():
+        task.cancel()
+
+
 @cl.on_message
 async def on_message(message: cl.Message):
+    # Store the current asyncio task so on_stop can cancel it
+    cl.user_session.set("message_task", asyncio.current_task())
     session_id = cl.user_session.get("session_id")
 
     msg = cl.Message(content="")
