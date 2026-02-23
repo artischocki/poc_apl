@@ -50,6 +50,8 @@ services:
       BACKEND_URL: http://backend:8000
       # Persist chats to a named volume; survives container restarts
       CHAINLIT_DB_URL: sqlite+aiosqlite:////app/data/chainlit.db
+    # --root-path tells Chainlit it is mounted at a subpath behind a reverse proxy
+    command: ["chainlit", "run", "app.py", "--host", "0.0.0.0", "--port", "3000", "--root-path", "/aplpoc"]
     volumes:
       - chainlit_data:/app/data
     depends_on:
