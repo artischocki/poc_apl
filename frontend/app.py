@@ -44,12 +44,23 @@ async def on_chat_start():
     cl.user_session.set("session_id", cl.context.session.id)
 
 
-@cl.on_stop
-async def on_stop():
-    """Cancel the running on_message task when the user clicks the stop button."""
+def _cancel_message_task() -> None:
+    """Cancel the current on_message task if one is running."""
     task = cl.user_session.get("message_task")
     if task and not task.done():
         task.cancel()
+
+
+@cl.on_stop
+async def on_stop():
+    """Cancel the running task when the user clicks the stop button."""
+    _cancel_message_task()
+
+
+@cl.on_chat_end
+async def on_chat_end():
+    """Cancel the running task when the user closes the tab or the session ends."""
+    _cancel_message_task()
 
 
 @cl.on_message
