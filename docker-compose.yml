@@ -7,7 +7,7 @@ services:
       POSTGRES_PASSWORD: ${TIMESCALEDB_PASSWORD:-postgres}
       TIMESCALEDB_TELEMETRY: "off"
     ports:
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"
     volumes:
       - timescaledb_data:/var/lib/postgresql/data
     healthcheck:
@@ -19,7 +19,7 @@ services:
   adminer:
     image: adminer
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     depends_on:
       - timescaledb
 
@@ -28,7 +28,7 @@ services:
       context: ./backend
       network: host
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     env_file:
       - .env
     environment:
@@ -42,7 +42,7 @@ services:
       context: ./frontend
       network: host
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     env_file:
       - .env
     environment:
