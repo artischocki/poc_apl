@@ -1,5 +1,6 @@
 """FastAPI backend — exposes the LangChain agent over HTTP with SSE streaming."""
 
+import asyncio
 import json
 import os
 from collections import defaultdict
@@ -28,6 +29,10 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Data Agent API", lifespan=lifespan)
+
+# Allow at most 2 agent calls to run concurrently — prevents CPU/memory exhaustion
+# on small servers when multiple users connect simultaneously.
+_agent_semaphore = asyncio.Semaphore(2)
 
 _plots_dir = Path(__file__).parent / "plots"
 _plots_dir.mkdir(exist_ok=True)
@@ -75,59 +80,60 @@ async def chat_stream(http_request: Request, request: ChatRequest):
     async def generate():
         assistant_tokens: list[str] = []
 
-        try:
-            async for event in agent.astream_events(
-                {"messages": list(history)},
-                version="v2",
-            ):
-                # Abort if the client has disconnected
-                if await http_request.is_disconnected():
-                    break
+        async with _agent_semaphore:
+            try:
+                async for event in agent.astream_events(
+                    {"messages": list(history)},
+                    version="v2",
+                ):
+                    # Abort if the client has disconnected
+                    if await http_request.is_disconnected():
+                        break
 
-                if event["event"] == "on_chat_model_stream":
-                    chunk = event["data"]["chunk"]
-                    content = chunk.content
-                    if not content:
-                        continue
-                    # content can be a string or a list of content blocks
-                    if isinstance(content, list):
-                        for block in content:
-                            if isinstance(block, dict) and block.get("type") == "text":
-                                token = block["text"]
-                                assistant_tokens.append(token)
-                                yield f"data: {json.dumps({'type': 'token', 'token': token})}\n\n"
-                    else:
-                        assistant_tokens.append(content)
-                        yield f"data: {json.dumps({'type': 'token', 'token': content})}\n\n"
-                elif event["event"] == "on_tool_start":
-                    tool_name = event.get("name", "unknown")
-                    run_id = event.get("run_id", "")
-                    tool_input = event["data"].get("input", "")
-                    try:
-                        input_payload = (
-                            json.dumps(tool_input) if not isinstance(tool_input, str) else tool_input
+                    if event["event"] == "on_chat_model_stream":
+                        chunk = event["data"]["chunk"]
+                        content = chunk.content
+                        if not content:
+                            continue
+                        # content can be a string or a list of content blocks
+                        if isinstance(content, list):
+                            for block in content:
+                                if isinstance(block, dict) and block.get("type") == "text":
+                                    token = block["text"]
+                                    assistant_tokens.append(token)
+                                    yield f"data: {json.dumps({'type': 'token', 'token': token})}\n\n"
+                        else:
+                            assistant_tokens.append(content)
+                            yield f"data: {json.dumps({'type': 'token', 'token': content})}\n\n"
+                    elif event["event"] == "on_tool_start":
+                        tool_name = event.get("name", "unknown")
+                        run_id = event.get("run_id", "")
+                        tool_input = event["data"].get("input", "")
+                        try:
+                            input_payload = (
+                                json.dumps(tool_input) if not isinstance(tool_input, str) else tool_input
+                            )
+                        except (TypeError, ValueError):
+                            input_payload = str(tool_input)
+                        yield f"data: {json.dumps({'type': 'tool_start', 'run_id': run_id, 'name': tool_name, 'input': input_payload})}\n\n"
+                    elif event["event"] == "on_tool_end":
+                        run_id = event.get("run_id", "")
+                        tool_output = event["data"].get("output", "")
+                        output_str = (
+                            str(tool_output.content)
+                            if hasattr(tool_output, "content")
+                            else str(tool_output)
                         )
-                    except (TypeError, ValueError):
-                        input_payload = str(tool_input)
-                    yield f"data: {json.dumps({'type': 'tool_start', 'run_id': run_id, 'name': tool_name, 'input': input_payload})}\n\n"
-                elif event["event"] == "on_tool_end":
-                    run_id = event.get("run_id", "")
-                    tool_output = event["data"].get("output", "")
-                    output_str = (
-                        str(tool_output.content)
-                        if hasattr(tool_output, "content")
-                        else str(tool_output)
-                    )
-                    if output_str.startswith("PLOT:"):
-                        uid = output_str[5:]
-                        yield f"data: {json.dumps({'type': 'plotly', 'run_id': run_id, 'path': f'/plots/{uid}.json'})}\n\n"
-                        output_str = "Chart generated."
-                    yield f"data: {json.dumps({'type': 'tool_end', 'run_id': run_id, 'output': output_str})}\n\n"
-        finally:
-            # Save whatever was generated, even if the client disconnected mid-stream
-            if assistant_tokens:
-                history.append({"role": "assistant", "content": "".join(assistant_tokens)})
-            yield "data: [DONE]\n\n"
+                        if output_str.startswith("PLOT:"):
+                            uid = output_str[5:]
+                            yield f"data: {json.dumps({'type': 'plotly', 'run_id': run_id, 'path': f'/plots/{uid}.json'})}\n\n"
+                            output_str = "Chart generated."
+                        yield f"data: {json.dumps({'type': 'tool_end', 'run_id': run_id, 'output': output_str})}\n\n"
+            finally:
+                # Save whatever was generated, even if the client disconnected mid-stream
+                if assistant_tokens:
+                    history.append({"role": "assistant", "content": "".join(assistant_tokens)})
+                yield "data: [DONE]\n\n"
 
     return StreamingResponse(generate(), media_type="text/event-stream")
 
